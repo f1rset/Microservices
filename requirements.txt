@@ -1,0 +1,8 @@
+grpcio-tools
+tenacity
+httpx
+fastapi
+uvicorn
+sqlalchemy 
+psycopg2-binary
+hazelcast-python-client

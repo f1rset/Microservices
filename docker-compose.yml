@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: counter_db
+
+  hz1:
+    image: hazelcast/hazelcast:5.3
+  hz2:
+    image: hazelcast/hazelcast:5.3
+  hz3:
+    image: hazelcast/hazelcast:5.3
+
+  logging-1: &logging_base
+    build: .
+    command: python logging_service.py
+    environment:
+      - HAZELCAST_MEMBERS=hz1,hz2,hz3
+      - GRPC_PORT=50051
+    depends_on: [hz1, hz2, hz3]
+
+  logging-2:
+    <<: *logging_base
+
+  logging-3:
+    <<: *logging_base
+
+  counter-service:
+    build: .
+    command: python counter_service.py
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/counter_db
+    depends_on: [db]
+
+  facade-service:
+    build: .
+    command: python facade_service.py
+    ports:
+      - "8000:8000"
+    depends_on: [logging-1, logging-2, logging-3, counter-service]
