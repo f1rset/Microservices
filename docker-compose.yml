@@ -13,13 +13,22 @@ services:
   hz3:
     image: hazelcast/hazelcast:5.3
 
+  config-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    command: python -m config_server.main
+    ports:
+      - "8888:8888"
+
   logging-1: &logging_base
     build: .
-    command: python logging_service.py
+    command: python -m logging_service.logging_service
     environment:
       - HAZELCAST_MEMBERS=hz1,hz2,hz3
       - GRPC_PORT=50051
-    depends_on: [hz1, hz2, hz3]
+      - CONFIG_SERVER_URL=http://config-server:8888
+    depends_on: [hz1, hz2, hz3, config-server]
 
   logging-2:
     <<: *logging_base
@@ -29,14 +38,19 @@ services:
 
   counter-service:
     build: .
-    command: python counter_service.py
+    command: python -m counter_service.counter_service
     environment:
       - DATABASE_URL=postgresql://user:pass@db:5432/counter_db
-    depends_on: [db]
+      - HAZELCAST_MEMBERS=hz1,hz2,hz3
+      - CONFIG_SERVER_URL=http://config-server:8888
+    depends_on: [db, hz1, hz2, hz3, config-server]
 
   facade-service:
     build: .
-    command: python facade_service.py
+    command: python -m facade_service.facade_service
     ports:
       - "8000:8000"
-    depends_on: [logging-1, logging-2, logging-3, counter-service]
+    environment:
+      - HAZELCAST_MEMBERS=hz1,hz2,hz3
+      - CONFIG_SERVER_URL=http://config-server:8888
+    depends_on: [logging-1, logging-2, logging-3, counter-service, config-server]
