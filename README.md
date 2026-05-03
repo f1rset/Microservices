@@ -34,20 +34,15 @@
 ## 5. Демонстрація роботи (Скріншоти)
 
 ### Consul UI - Зареєстровані сервіси
-![Consul Services](https://via.placeholder.com/800x400?text=Consul+UI+Showing+Services+Registered)
-*(Тут відображаються facade-service, counter-service та 3 екземпляри logging-service)*
-
-### Consul KV - Конфігурації
-![Consul KV](https://via.placeholder.com/800x400?text=Consul+KV+config/hazelcast/members)
+![Consul Services](image.png)
+*(Тут відображаються facade-service, counter-service та 5 екземплярів logging-service)*
 
 ### POST запит до Facade Service
-![POST Request](https://via.placeholder.com/800x400?text=POST+/proxy?msg=test_consul)
 ```json
 {"uuid":"...","status":"Stored in Hazelcast","mq":"sent"}
 ```
 
 ### GET запит до Facade Service
-![GET Request](https://via.placeholder.com/800x400?text=GET+/proxy)
 ```text
 "test_consul : Total messages processed and saved in DB: 1"
 ```
@@ -59,12 +54,6 @@
 4. `facade-service` продовжує працювати, оскільки при запиті `get_service_addresses` Consul повертає лише "healthy" екземпляри.
 
 ## 7. Вміст консолі (приклад Discovery)
-```text
-INFO:facade-service:Attempting to contact logging-service at 5b3a2e1f44c2:50051
-INFO:facade-service:Message 'hello' sent to counter_queue
-INFO:facade-service:Attempting to contact logging-service at a1b2c3d4e5f6:50051
-```
-
 ## 8. Як запустити
 
 Для запуску всієї інфраструктури та мікросервісів виконайте наступні команди:
@@ -76,7 +65,7 @@ INFO:facade-service:Attempting to contact logging-service at a1b2c3d4e5f6:50051
 
 2. **Запуск через Docker Compose:**
    ```bash
-   docker compose up --build
+   docker-compose up --build
    ```
 
 3. **Перевірка роботи:**
@@ -94,6 +83,6 @@ INFO:facade-service:Attempting to contact logging-service at a1b2c3d4e5f6:50051
 4. **Масштабування (опціонально):**
    Ви можете запустити більше екземплярів сервісів:
    ```bash
-   docker compose up --build --scale logging-service=5
+   docker-compose up --build --scale logging-service=5
    ```
-```
+

@@ -78,41 +78,68 @@ async def handle_post(msg: str):
     msg_id = str(uuid.uuid4())
     
     # 1. Log message via gRPC
+    start_logging = time.time()
     request = logging_pb2.LogRequest(uuid=msg_id, msg=msg)
     log_response = await call_logging_with_failover("LogMessage", request)
+    logging_duration = time.time() - start_logging
     
     # 2. Send to counter-service via MQ
+    start_mq = time.time()
     try:
         counter_queue.offer(msg)
         logger.info(f"Message '{msg}' sent to counter_queue")
     except Exception as e:
         logger.error(f"Failed to send message to MQ: {e}")
+    mq_duration = time.time() - start_mq
     
-    return {"uuid": msg_id, "status": log_response.status, "mq": "sent"}
+    return {
+        "uuid": msg_id, 
+        "status": log_response.status, 
+        "mq": "sent",
+        "durations": {
+            "logging_service": f"{logging_duration:.4f}s",
+            "mq_operation": f"{mq_duration:.4f}s"
+        }
+    }
 
 @app.get("/proxy")
 async def handle_get():
+    start_total = time.time()
+    
     # 1. Get logs via gRPC
+    start_logging = time.time()
     log_response = await call_logging_with_failover("GetLogs", logging_pb2.Empty())
     logs_text = log_response.all_msgs
+    logging_duration = time.time() - start_logging
 
     # 2. Discover counter-service via Consul
+    start_counter = time.time()
     counter_addresses = consul_client.get_service_addresses("counter-service")
     if not counter_addresses:
-        return f"{logs_text} : [Counter-service Not Found]"
+        counter_text = "[Counter-service Not Found]"
+        counter_duration = time.time() - start_counter
+    else:
+        addr = counter_addresses[0]
+        url = f"http://{addr}/message"
+        try:
+            async with httpx.AsyncClient() as client:
+                msg_response = await client.get(url)
+                counter_text = msg_response.text
+        except Exception as e:
+            logger.error(f"Counter-service error at {url}: {e}")
+            counter_text = "[Counter-service Error]"
+        counter_duration = time.time() - start_counter
+
+    total_duration = time.time() - start_total
     
-    addr = counter_addresses[0]
-    url = f"http://{addr}/message"
-
-    try:
-        async with httpx.AsyncClient() as client:
-            msg_response = await client.get(url)
-            static_text = msg_response.text
-
-        return f"{logs_text} : {static_text}"
-    except Exception as e:
-        logger.error(f"Counter-service error at {url}: {e}")
-        return f"{logs_text} : [Counter-service Error]"
+    return {
+        "result": f"{logs_text} : {counter_text}",
+        "durations": {
+            "logging_service_contribution": f"{logging_duration:.4f}s",
+            "counter_service_contribution": f"{counter_duration:.4f}s",
+            "total_time": f"{total_duration:.4f}s"
+        }
+    }
 
 if __name__ == "__main__":
     import uvicorn
