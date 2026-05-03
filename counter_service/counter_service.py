@@ -1,14 +1,13 @@
 import time
 import os
 import threading
-import socket
-import httpx
 import hazelcast
 import logging
 from fastapi import FastAPI
 from sqlalchemy import Column, Integer, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from shared.consul_utils import ConsulClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("counter-service")
@@ -19,9 +18,8 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-CONFIG_SERVER_URL = os.getenv("CONFIG_SERVER_URL", "http://config-server:8888")
 SERVICE_NAME = "counter-service"
-HAZELCAST_MEMBERS = os.getenv("HAZELCAST_MEMBERS", "hz1,hz2,hz3").split(",")
+consul_client = ConsulClient()
 
 class MessageCounter(Base):
     __tablename__ = "counters"
@@ -36,37 +34,22 @@ def init_db():
         except Exception:
             time.sleep(1)
 
-def register_with_config_server(port):
-    hostname = socket.gethostname()
-    address = f"{hostname}:{port}"
-    
-    max_retries = 10
-    for i in range(max_retries):
-        try:
-            with httpx.Client() as client:
-                client.post(f"{CONFIG_SERVER_URL}/register", json={
-                    "service_name": SERVICE_NAME,
-                    "address": address
-                })
-            logger.info(f"Registered {SERVICE_NAME} at {address} with config-server")
-            return
-        except Exception as e:
-            logger.warning(f"Failed to register with config-server (attempt {i+1}/{max_retries}): {e}")
-            time.sleep(2)
-
 def start_mq_consumer():
-    logger.info(f"Connecting to Hazelcast for MQ: {HAZELCAST_MEMBERS}")
+    hz_members_str = consul_client.get_kv("config/hazelcast/members", "hz1,hz2,hz3")
+    hz_cluster_members = hz_members_str.split(",")
+    queue_name = consul_client.get_kv("config/mq/queue_name", "counter_queue")
+
+    logger.info(f"Connecting to Hazelcast for MQ: {hz_cluster_members}")
     client = hazelcast.HazelcastClient(
-        cluster_members=HAZELCAST_MEMBERS,
+        cluster_members=hz_cluster_members,
         cluster_name="dev",
     )
-    queue = client.get_queue("counter_queue").blocking()
-    logger.info("Connected to Hazelcast Queue 'counter_queue'")
+    queue = client.get_queue(queue_name).blocking()
+    logger.info(f"Connected to Hazelcast Queue '{queue_name}'")
 
     def consume():
         while True:
             try:
-                # Take message from queue (blocking)
                 msg = queue.take()
                 logger.info(f"Received message from MQ: {msg}")
                 
@@ -96,12 +79,6 @@ async def get_and_increment_count():
         if not counter:
             counter = MessageCounter(count=0)
             db.add(counter)
-        # Note: The task says facade uses GET for reading. 
-        # Usually GET shouldn't increment, but previous implementation did.
-        # I'll keep it as just reading if that's what's intended for "reading".
-        # But to match previous behavior exactly if needed:
-        # counter.count += 1
-        # db.commit()
         return f"Total messages processed and saved in DB: {counter.count}"
     finally:
         db.close()
@@ -109,7 +86,7 @@ async def get_and_increment_count():
 @app.on_event("startup")
 def startup_event():
     init_db()
-    register_with_config_server(8002)
+    consul_client.register_service(SERVICE_NAME, 8002)
     start_mq_consumer()
 
 if __name__ == "__main__":

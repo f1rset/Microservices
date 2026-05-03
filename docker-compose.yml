@@ -13,37 +13,52 @@ services:
   hz3:
     image: hazelcast/hazelcast:5.3
 
-  config-server:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    command: python -m config_server.main
+  consul:
+    image: hashicorp/consul:1.15
     ports:
-      - "8888:8888"
+      - "8500:8500"
+      - "8600:8600/udp"
+    command: "agent -dev -client=0.0.0.0 -ui"
 
-  logging-1: &logging_base
+  consul-init:
+    image: hashicorp/consul:1.15
+    depends_on:
+      - consul
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "Waiting for Consul..."
+        until consul kv put config/hazelcast/members "hz1,hz2,hz3"; do sleep 1; done
+        consul kv put config/mq/queue_name "counter_queue"
+        echo "Consul initialized"
+
+  logging-service:
     build: .
     command: python -m logging_service.logging_service
     environment:
-      - HAZELCAST_MEMBERS=hz1,hz2,hz3
+      - CONSUL_HOST=consul
       - GRPC_PORT=50051
-      - CONFIG_SERVER_URL=http://config-server:8888
-    depends_on: [hz1, hz2, hz3, config-server]
-
-  logging-2:
-    <<: *logging_base
-
-  logging-3:
-    <<: *logging_base
+    depends_on:
+      - consul
+      - hz1
+      - hz2
+      - hz3
+    deploy:
+      replicas: 3
 
   counter-service:
     build: .
     command: python -m counter_service.counter_service
     environment:
+      - CONSUL_HOST=consul
       - DATABASE_URL=postgresql://user:pass@db:5432/counter_db
-      - HAZELCAST_MEMBERS=hz1,hz2,hz3
-      - CONFIG_SERVER_URL=http://config-server:8888
-    depends_on: [db, hz1, hz2, hz3, config-server]
+    depends_on:
+      - consul
+      - db
+      - hz1
+      - hz2
+      - hz3
 
   facade-service:
     build: .
@@ -51,6 +66,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - HAZELCAST_MEMBERS=hz1,hz2,hz3
-      - CONFIG_SERVER_URL=http://config-server:8888
-    depends_on: [logging-1, logging-2, logging-3, counter-service, config-server]
+      - CONSUL_HOST=consul
+    depends_on:
+      - consul
+      - logging-service
+      - counter-service
