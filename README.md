@@ -60,7 +60,35 @@
 
 ## 7. Вміст консолі (приклад Discovery)
 ```text
-INFO:facade-service:Attempting to contact logging-service at 5b3a2e1f44c2:50051
-INFO:facade-service:Message 'hello' sent to counter_queue
-INFO:facade-service:Attempting to contact logging-service at a1b2c3d4e5f6:50051
+## 8. Як запустити
+
+Для запуску всієї інфраструктури та мікросервісів виконайте наступні команди:
+
+1. **Клонування та перехід у гілку:**
+   ```bash
+   git checkout micro_consul
+   ```
+
+2. **Запуск через Docker Compose:**
+   ```bash
+   docker-compose up --build
+   ```
+
+3. **Перевірка роботи:**
+   - **Consul UI**: [http://localhost:8500](http://localhost:8500) (тут можна побачити зареєстровані сервіси та KV)
+   - **Facade Service**: [http://localhost:8000](http://localhost:8000)
+   - **Надсилання повідомлення (POST)**:
+     ```bash
+     curl -X POST "http://localhost:8000/proxy?msg=HelloConsul"
+     ```
+   - **Отримання логів та лічильника (GET)**:
+     ```bash
+     curl http://localhost:8000/proxy
+     ```
+
+4. **Масштабування (опціонально):**
+   Ви можете запустити більше екземплярів сервісів:
+   ```bash
+   docker-compose up --build --scale logging-service=5
+   ```
 ```
